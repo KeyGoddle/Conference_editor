@@ -84,6 +84,13 @@ FONT_SEARCH_DIRS = [
 
 FONT_EXTENSIONS = {".ttf", ".otf", ".ttc"}
 
+A4_PORTRAIT = (2480, 3508)
+A4_LANDSCAPE = (3508, 2480)
+PDF_DPI = 300
+BADGE_PDF_MARGIN = 90
+BADGE_PDF_GAP = 40
+BADGE_MIN_SCALE = 0.65
+
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "badges": {
@@ -499,6 +506,149 @@ def save_image(image: Image.Image, path: Path, extension: str) -> None:
     image.save(path)
 
 
+def flatten_to_rgb(image: Image.Image, background: str = "white") -> Image.Image:
+    if image.mode == "RGB":
+        return image
+    rgb = Image.new("RGB", image.size, background)
+    if image.mode == "RGBA":
+        rgb.paste(image, mask=image.getchannel("A"))
+    else:
+        rgb.paste(image.convert("RGB"))
+    return rgb
+
+
+def fit_image_on_page(image: Image.Image, page_size: tuple[int, int], margin: int = 0) -> Image.Image:
+    page_width, page_height = page_size
+    content_width = page_width - margin * 2
+    content_height = page_height - margin * 2
+    scale = min(content_width / image.width, content_height / image.height)
+    target_size = (max(1, int(image.width * scale)), max(1, int(image.height * scale)))
+
+    page = Image.new("RGB", page_size, "white")
+    resized = flatten_to_rgb(image).resize(target_size, Image.Resampling.LANCZOS)
+    left = (page_width - target_size[0]) // 2
+    top = (page_height - target_size[1]) // 2
+    page.paste(resized, (left, top))
+    return page
+
+
+def save_pdf_pages(pages: list[Image.Image], output_path: Path) -> None:
+    if not pages:
+        raise ValueError("Нет страниц для PDF")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    first, *rest = [flatten_to_rgb(page) for page in pages]
+    first.save(
+        output_path,
+        "PDF",
+        save_all=True,
+        append_images=rest,
+        resolution=PDF_DPI,
+    )
+
+
+def render_badge_image(row: FieldMap, sides: list[BadgeSide], template_path: Path, side_gap: int) -> Image.Image:
+    rendered_sides: list[Image.Image] = []
+    for side in sides:
+        with Image.open(template_path) as template:
+            side_image = template.convert("RGBA")
+        for block in side.blocks:
+            draw_centered_text(side_image, block, row.get(block.field, ""))
+        rendered_sides.append(side_image)
+
+    width = sum(image.width for image in rendered_sides) + side_gap * (len(rendered_sides) - 1)
+    height = max(image.height for image in rendered_sides)
+    image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+
+    left = 0
+    for side_image in rendered_sides:
+        image.paste(side_image, (left, 0))
+        left += side_image.width + side_gap
+    return image
+
+
+def best_badge_sheet_layout(badge_size: tuple[int, int]) -> dict[str, float | int | tuple[int, int]]:
+    badge_width, badge_height = badge_size
+    best: dict[str, float | int | tuple[int, int]] | None = None
+
+    for page_size in (A4_PORTRAIT, A4_LANDSCAPE):
+        page_width, page_height = page_size
+        content_width = page_width - BADGE_PDF_MARGIN * 2
+        content_height = page_height - BADGE_PDF_MARGIN * 2
+        for cols in range(1, 7):
+            for rows in range(1, 11):
+                cell_width = (content_width - BADGE_PDF_GAP * (cols - 1)) / cols
+                cell_height = (content_height - BADGE_PDF_GAP * (rows - 1)) / rows
+                if cell_width <= 0 or cell_height <= 0:
+                    continue
+                scale = min(cell_width / badge_width, cell_height / badge_height, 1.0)
+                if scale < BADGE_MIN_SCALE:
+                    continue
+
+                per_page = cols * rows
+                candidate: dict[str, float | int | tuple[int, int]] = {
+                    "page_size": page_size,
+                    "cols": cols,
+                    "rows": rows,
+                    "scale": scale,
+                    "per_page": per_page,
+                }
+                if best is None:
+                    best = candidate
+                    continue
+                if per_page > int(best["per_page"]):
+                    best = candidate
+                    continue
+                if per_page == int(best["per_page"]) and scale > float(best["scale"]):
+                    best = candidate
+
+    if best is None:
+        page_size = A4_LANDSCAPE if badge_width >= badge_height else A4_PORTRAIT
+        content_width = page_size[0] - BADGE_PDF_MARGIN * 2
+        content_height = page_size[1] - BADGE_PDF_MARGIN * 2
+        best = {
+            "page_size": page_size,
+            "cols": 1,
+            "rows": 1,
+            "scale": min(content_width / badge_width, content_height / badge_height),
+            "per_page": 1,
+        }
+    return best
+
+
+def make_badge_pdf_pages(badges: list[Image.Image]) -> list[Image.Image]:
+    if not badges:
+        return []
+
+    layout = best_badge_sheet_layout(badges[0].size)
+    page_size = layout["page_size"]
+    assert isinstance(page_size, tuple)
+    cols = int(layout["cols"])
+    rows = int(layout["rows"])
+    scale = float(layout["scale"])
+    per_page = int(layout["per_page"])
+
+    page_width, page_height = page_size
+    badge_width = int(badges[0].width * scale)
+    badge_height = int(badges[0].height * scale)
+    grid_width = cols * badge_width + (cols - 1) * BADGE_PDF_GAP
+    grid_height = rows * badge_height + (rows - 1) * BADGE_PDF_GAP
+    start_x = (page_width - grid_width) // 2
+    start_y = (page_height - grid_height) // 2
+
+    pages: list[Image.Image] = []
+    for page_start in range(0, len(badges), per_page):
+        page = Image.new("RGB", page_size, "white")
+        for slot, badge in enumerate(badges[page_start : page_start + per_page]):
+            col = slot % cols
+            row = slot // cols
+            x = start_x + col * (badge_width + BADGE_PDF_GAP)
+            y = start_y + row * (badge_height + BADGE_PDF_GAP)
+            resized = flatten_to_rgb(badge).resize((badge_width, badge_height), Image.Resampling.LANCZOS)
+            page.paste(resized, (x, y))
+        pages.append(page)
+    return pages
+
+
 def render_badges(
     excel_path: Path,
     template_path: Path,
@@ -515,30 +665,31 @@ def render_badges(
     extension = output_extension(template_path, forced_format)
     prefix = str(config["badges"].get("output_prefix", "badge"))
     side_gap = int(config["badges"].get("side_gap", 0))
+    rendered_badges: list[Image.Image] = []
 
     for number, row in enumerate(rows, start=1):
-        rendered_sides: list[Image.Image] = []
-        for side in sides:
-            with Image.open(template_path) as template:
-                side_image = template.convert("RGBA")
-            for block in side.blocks:
-                draw_centered_text(side_image, block, row.get(block.field, ""))
-            rendered_sides.append(side_image)
-
-        width = sum(image.width for image in rendered_sides) + side_gap * (len(rendered_sides) - 1)
-        height = max(image.height for image in rendered_sides)
-        image = Image.new("RGBA", (width, height), (255, 255, 255, 0))
-
-        left = 0
-        for side_image in rendered_sides:
-            image.paste(side_image, (left, 0))
-            left += side_image.width + side_gap
-
+        image = render_badge_image(row, sides, template_path, side_gap)
+        if extension == "pdf":
+            rendered_badges.append(image)
+            continue
         name_source = row.get("full_name_ru") or row.get("full_name_en") or str(number)
         filename = f"{number:03d}_{safe_filename(name_source, prefix)}.{extension}"
         save_image(image, output_dir / filename, extension)
 
+    if extension == "pdf":
+        pages = make_badge_pdf_pages(rendered_badges)
+        save_pdf_pages(pages, output_dir / "badges_a4.pdf")
+
     return len(rows)
+
+
+def render_certificate_image(row: FieldMap, blocks: list[TextBlock], template_path: Path) -> Image.Image:
+    with Image.open(template_path) as template:
+        image = template.convert("RGBA")
+
+    for block in blocks:
+        draw_centered_text(image, block, row.get(block.field, ""))
+    return image
 
 
 def render_documents(
@@ -569,14 +720,15 @@ def render_documents(
 
     extension = output_extension(template_path, forced_format)
     prefix = str(config[mode].get("output_prefix", mode))
+    pdf_pages: list[Image.Image] = []
 
     for number, row in enumerate(rows, start=1):
-        with Image.open(template_path) as template:
-            image = template.convert("RGBA")
+        image = render_certificate_image(row, blocks, template_path)
 
-        for block in blocks:
-            draw_centered_text(image, block, row.get(block.field, ""))
-
+        if extension == "pdf":
+            page_size = A4_LANDSCAPE if image.width >= image.height else A4_PORTRAIT
+            pdf_pages.append(fit_image_on_page(image, page_size))
+            continue
         name_source = (
             row.get("full_name_ru")
             or row.get("full_name_en")
@@ -585,6 +737,9 @@ def render_documents(
         )
         filename = f"{number:03d}_{safe_filename(name_source, prefix)}.{extension}"
         save_image(image, output_dir / filename, extension)
+
+    if extension == "pdf":
+        save_pdf_pages(pdf_pages, output_dir / "certificates_a4.pdf")
 
     return len(rows)
 
@@ -603,7 +758,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", required=True, type=Path, help="Папка для готовых файлов.")
     parser.add_argument("--config", type=Path, help="JSON с координатами текста.")
     parser.add_argument("--sheet", help="Название листа Excel. По умолчанию первый лист.")
-    parser.add_argument("--format", choices=["png", "jpg", "jpeg"], help="Формат результата.")
+    parser.add_argument("--format", choices=["png", "jpg", "jpeg", "pdf"], help="Формат результата.")
     return parser.parse_args()
 
 

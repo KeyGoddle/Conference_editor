@@ -118,7 +118,7 @@ class LayoutEditor:
         self.excel_path_var = tk.StringVar(value=str(DEFAULT_EXCEL_FILES["badges"]))
         self.output_dir_var = tk.StringVar(value=str(DEFAULT_OUTPUT_DIRS["badges"]))
         self.sheet_var = tk.StringVar(value="")
-        self.output_format_var = tk.StringVar(value="png")
+        self.output_format_var = tk.StringVar(value="pdf")
         self.generation_status_var = tk.StringVar(value="")
 
         self.build_ui()
@@ -341,7 +341,7 @@ class LayoutEditor:
         fmt = ttk.Combobox(
             box,
             textvariable=self.output_format_var,
-            values=["png", "jpg", "jpeg"],
+            values=["pdf", "png", "jpg", "jpeg"],
             state="readonly",
             width=10,
         )

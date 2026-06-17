@@ -12,9 +12,10 @@ dist/
 *.spec
 
 examples/output/
+generated_badges/
+generated_certificates/
 examples/.DS_Store
 examples/**/.DS_Store
 ~$*.xlsx
 
 Homework_03-04.ipynb
-

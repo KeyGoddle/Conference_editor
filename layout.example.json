@@ -8,8 +8,8 @@
         "blocks": [
           {
             "field": "full_name_ru",
-            "x": 500,
-            "y": 275,
+            "x": 499,
+            "y": 361,
             "max_width": 760,
             "max_height": 130,
             "font_size": 50,
@@ -34,8 +34,8 @@
         "blocks": [
           {
             "field": "full_name_en",
-            "x": 500,
-            "y": 275,
+            "x": 499,
+            "y": 361,
             "max_width": 760,
             "max_height": 130,
             "font_size": 50,
