@@ -1,0 +1,83 @@
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64
+            os: windows-latest
+            artifact_name: ConferenceEditor-Windows-x64
+            archive_name: ConferenceEditor-Windows-x64.zip
+          - name: macOS Intel
+            os: macos-13
+            artifact_name: ConferenceEditor-macOS-Intel
+            archive_name: ConferenceEditor-macOS-Intel.zip
+          - name: macOS Apple Silicon
+            os: macos-14
+            artifact_name: ConferenceEditor-macOS-Apple-Silicon
+            archive_name: ConferenceEditor-macOS-Apple-Silicon.zip
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Build Windows app
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m PyInstaller `
+            --noconfirm `
+            --clean `
+            --onedir `
+            --windowed `
+            --name ConferenceEditor `
+            --add-data "layout.example.json;." `
+            --add-data "examples/templates;examples/templates" `
+            --add-data "examples/data;examples/data" `
+            layout_editor.py
+          Compress-Archive -Path "dist\ConferenceEditor" -DestinationPath "${{ matrix.archive_name }}" -Force
+
+      - name: Build macOS app
+        if: runner.os == 'macOS'
+        run: |
+          python -m PyInstaller \
+            --noconfirm \
+            --clean \
+            --onedir \
+            --windowed \
+            --name ConferenceEditor \
+            --add-data "layout.example.json:." \
+            --add-data "examples/templates:examples/templates" \
+            --add-data "examples/data:examples/data" \
+            layout_editor.py
+          codesign --force --deep --sign - "dist/ConferenceEditor.app"
+          ditto -c -k --sequesterRsrc --keepParent "dist/ConferenceEditor.app" "${{ matrix.archive_name }}"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.archive_name }}
+          if-no-files-found: error
+

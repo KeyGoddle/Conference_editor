@@ -1,0 +1,85 @@
+{
+  "badges": {
+    "output_prefix": "badge",
+    "side_gap": 1,
+    "sides": [
+      {
+        "name": "ru",
+        "blocks": [
+          {
+            "field": "full_name_ru",
+            "x": 500,
+            "y": 275,
+            "max_width": 760,
+            "max_height": 130,
+            "font_size": 50,
+            "fill": "#111111",
+            "bold": true,
+            "font_path": "Times New Roman"
+          },
+          {
+            "field": "city_ru",
+            "x": 500,
+            "y": 555,
+            "max_width": 700,
+            "max_height": 90,
+            "font_size": 34,
+            "fill": "#111111",
+            "bold": false
+          }
+        ]
+      },
+      {
+        "name": "en",
+        "blocks": [
+          {
+            "field": "full_name_en",
+            "x": 500,
+            "y": 275,
+            "max_width": 760,
+            "max_height": 130,
+            "font_size": 50,
+            "fill": "#111111",
+            "bold": true,
+            "font_path": "Times New Roman"
+          },
+          {
+            "field": "city_en",
+            "x": 500,
+            "y": 555,
+            "max_width": 700,
+            "max_height": 90,
+            "font_size": 34,
+            "fill": "#111111",
+            "bold": false
+          }
+        ]
+      }
+    ]
+  },
+  "certificates": {
+    "output_prefix": "certificate",
+    "blocks": [
+      {
+        "field": "full_name_ru",
+        "x": 879,
+        "y": 501,
+        "max_width": 1200,
+        "max_height": 130,
+        "font_size": 58,
+        "fill": "#111111",
+        "bold": true
+      },
+      {
+        "field": "talk_title",
+        "x": 877,
+        "y": 898,
+        "max_width": 1250,
+        "max_height": 180,
+        "font_size": 38,
+        "fill": "#111111",
+        "bold": false
+      }
+    ]
+  }
+}
